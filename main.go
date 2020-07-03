@@ -152,16 +152,30 @@ func temperature(city string, providers ...weatherProvider) (float64, error) {
 }
 
 func (w multiWeatherProvider) temperature(city string) (float64, error) {
-	sum := 0.0
+	temps := make(chan float64, len(w))
+	errs := make(chan error, len(w))
 
 	for _, provider := range w {
-		k, err := provider.temperature(city)
+		go func(wp weatherProvider) {
+			k, err := wp.temperature(city)
+			if err != nil {
+				errs <- err
+				return
+			}
+			temps <- k
+		}(provider)
+	}
 
-		if err != nil {
+	sum := 0.0
+
+	for i := 0; i < len(w); i++ {
+		select {
+		case temp := <-temps:
+			sum += temp
+
+		case err := <-errs:
 			return 0, err
 		}
-
-		sum += k
 	}
 
 	return sum / float64(len(w)), nil
